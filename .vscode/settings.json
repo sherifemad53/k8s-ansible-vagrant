@@ -1,0 +1,14 @@
+{
+  "continue.models": [
+    {
+      "title": "LM Studio Coder",
+      "provider": "openai",
+      "model": "qwen/qwen3-4b-2507",
+      "apiBase": "http://localhost:1234/v1",
+      "apiKey": "lm-studio",
+      "contextLength": 4096
+    }
+  ],
+  "continue.enableTabAutocomplete": true,
+  "continue.enableInlineCompletion": true
+}

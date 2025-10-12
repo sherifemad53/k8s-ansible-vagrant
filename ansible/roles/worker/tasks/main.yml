@@ -1,0 +1,9 @@
+---
+- name: Copy join command from local
+  copy:
+    src: ./join-command.sh
+    dest: /tmp/join-command.sh
+    mode: 0755
+
+- name: Join worker to cluster
+  shell: sh /tmp/join-command.sh

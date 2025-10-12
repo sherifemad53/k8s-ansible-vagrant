@@ -1,0 +1,28 @@
+---
+- name: Initialize Kubernetes Master
+  shell: |
+    kubeadm init --apiserver-advertise-address=192.168.56.11 --pod-network-cidr=10.244.0.0/16
+  args:
+    creates: /etc/kubernetes/admin.conf
+
+- name: Setup kubeconfig for vagrant user
+  become: yes
+  become_user: vagrant
+  shell: |
+    mkdir -p $HOME/.kube
+    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+- name: Install Flannel CNI
+  shell: |
+    kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+  become: yes
+  become_user: vagrant
+
+- name: Get join command
+  shell: kubeadm token create --print-join-command
+  register: join_cmd
+
+- name: Save join command 
+  local_action: copy content="{{ join_cmd.stdout }}" dest="./join-command.sh"
+
