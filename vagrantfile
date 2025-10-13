@@ -1,6 +1,7 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/jammy64"
+  config.vm.box = "ubuntu_server"
 
+  
   N = 3
   (1..N).each do |i|
     config.vm.define "k8s-node#{i}" do |node|
@@ -10,10 +11,18 @@ Vagrant.configure("2") do |config|
         vb.memory = 2048
         vb.cpus = 2
       end
-      node.vm.provision "ansible" do |ansible|
-        ansible.playbook = "ansible/playbook.yml"
-        ansible.inventory_path = "ansible/inventory.ini"
-        ansible.limit = "all"
+
+      node.ssh.insert_key = false   # prevents generating per-VM key
+      node.vm.provision "shell", inline: "echo 'VM ready for Ansible'"
+
+      
+      # Only run Ansible on the last VM (k8s-node3) after all VMs are created
+      if i == N
+        node.vm.provision "ansible" do |ansible|
+          ansible.playbook = "ansible/playbook.yml"
+          ansible.inventory_path = "ansible/inventory.ini"
+          ansible.limit = "all"
+        end
       end
     end
   end

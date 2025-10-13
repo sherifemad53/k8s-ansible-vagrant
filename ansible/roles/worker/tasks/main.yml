@@ -1,9 +1,9 @@
 ---
-- name: Copy join command from local
-  copy:
-    src: ./join-command.sh
-    dest: /tmp/join-command.sh
-    mode: 0755
+- name: Join worker nodes to cluster
+  become: yes
+  shell: "{{ hostvars['kube_master']['join_cmd'] }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
 
-- name: Join worker to cluster
-  shell: sh /tmp/join-command.sh
+# - name: Join worker to cluster
+#   shell: sh /tmp/join-command.sh

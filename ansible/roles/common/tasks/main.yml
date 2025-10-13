@@ -10,12 +10,98 @@
     state: present
     update_cache: yes
 
-- name: Add Kubernetes apt repo
+- name: Add CRI-O Kubic repository GPG key
+  ansible.builtin.get_url:
+    url: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_22.04/Release.key
+    dest: /etc/apt/trusted.gpg.d/devel_kubic_libcontainers_stable.asc
+    mode: '0644'
+    force: yes
+
+- name: Add CRI-O Kubic repository for stable
+  ansible.builtin.apt_repository:
+    repo: deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_22.04/ /
+    state: present
+    filename: devel:kubic:libcontainers:stable
+
+- name: Add CRI-O Kubic repository for CRI-O version (e.g., 1.28)
+  ansible.builtin.apt_repository:
+    repo: deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/1.28/xUbuntu_22.04/ /
+    state: present
+    filename: devel:kubic:libcontainers:stable:cri-o:1.28
+
+- name: Install CRI-O and related packages
+  ansible.builtin.apt:
+    name:
+      - cri-o
+      - cri-o-runc
+    state: present
+    
+- name: Install crictl
+  become: yes
   shell: |
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+    VERSION="v1.30.0"
+    curl -sSL -o /tmp/crictl.tar.gz https://github.com/kubernetes-sigs/cri-tools/releases/download/${VERSION}/crictl-${VERSION}-linux-amd64.tar.gz
+    tar zxvf /tmp/crictl.tar.gz -C /usr/local/bin
+    rm -f /tmp/crictl.tar.gz
   args:
-    warn: false
+    creates: /usr/local/bin/crictl
+
+- name: Enable and start CRI-O service
+  ansible.builtin.systemd:
+    name: crio
+    state: started
+    enabled: yes
+
+- name: Verify CRI-O installation
+  ansible.builtin.shell: crictl info
+  register: crio_info
+  changed_when: false
+
+- name: Display CRI-O info
+  ansible.builtin.debug:
+    var: crio_info.stdout_lines
+
+- name: Ensure /etc/apt/keyrings exists
+  become: yes
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Kubernetes APT GPG key
+  become: yes
+  shell: |
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+# - name: Add Kubernetes APT repository
+#   become: yes
+#   apt_repository:
+#     repo: deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /
+#     filename: "kubernetes"
+#     state: present
+#     force: yes
+
+- name: Add Kubernetes APT repository
+  become: yes
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /"
+    filename: "kubernetes"
+    state: present
+
+# - name: Add Kubernetes APT repository
+#   become: yes
+#   shell: |
+#     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+#   args:
+#     creates: /etc/apt/sources.list.d/kubernetes.list
+
+
+- name: Update APT cache
+  become: yes
+  apt:
+    update_cache: yes
 
 - name: Install kubelet, kubeadm, kubectl
   apt:
@@ -29,11 +115,20 @@
 - name: Hold Kubernetes packages
   apt:
     name: "{{ item }}"
-    state: hold
+    state: fixed
   loop:
     - kubelet
     - kubeadm
     - kubectl
+
+- name: Enable IP forwarding for Kubernetes
+  become: yes
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    sysctl_set: yes
+    reload: yes
 
 - name: Disable swap
   command: swapoff -a
