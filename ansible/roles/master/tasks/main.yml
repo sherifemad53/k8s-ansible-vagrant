@@ -26,7 +26,7 @@
 - debug:
     msg: "{{ kubectl_version.stdout }}"
 
-# ✅ Wait until kube-apiserver is ready before applying Flannel
+# Wait until kube-apiserver is ready before applying Flannel
 - name: Wait for kube-apiserver to be ready
   become: yes
   become_user: vagrant
@@ -36,20 +36,12 @@
   delay: 15
   until: kube_ready.rc == 0
 
-# ✅ Check if Flannel is already installed (idempotent)
-- name: Check if Flannel is already applied
-  become: yes
-  become_user: vagrant
-  shell: kubectl get daemonset -n kube-flannel
-  register: flannel_check
-  ignore_errors: true
 
-# ✅ Apply Flannel only if not already installed
+# Apply Flannel only if not already installed
 - name: Apply Flannel CNI
   become: yes
   become_user: vagrant
   shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml --validate=false
-  when: flannel_check.rc != 0
 
 - name: Get join command
   become: yes

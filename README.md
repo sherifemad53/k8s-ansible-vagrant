@@ -16,7 +16,7 @@ The cluster consists of:
 - **1 Master Node** (`k8s-node1`): 192.168.56.11
 - **2 Worker Nodes** (`k8s-node2`, `k8s-node3`): 192.168.56.12, 192.168.56.13
 - **CNI**: Flannel for pod networking
-- **OS**: Ubuntu 22.04 LTS (Jammy)
+- **OS**: custom box based on ubuntu 22.04 server
 
 ## 📋 Prerequisites
 
@@ -137,110 +137,7 @@ vagrant provision
 
 For advanced users who want to create their own optimized Vagrant box, here's how to build a custom Ubuntu base box. The custom box provides a clean, optimized Ubuntu environment that Ansible will then use to install and configure Kubernetes.
 
-### Method 1: Using Packer (Recommended)
-
-1. **Install Packer:**
-   ```bash
-   # Ubuntu/Debian
-   wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-   echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-   sudo apt update && sudo apt install packer
-   ```
-
-2. **Create Packer configuration (`packer.json`):**
-   ```json
-   {
-     "builders": [
-       {
-         "type": "virtualbox-iso",
-         "iso_url": "https://releases.ubuntu.com/22.04/ubuntu-22.04.3-live-server-amd64.iso",
-         "iso_checksum": "sha256:5e38b55d57d94ff029719342357325ed3bda38fa80054f9330dc789cd2d43931",
-         "guest_os_type": "Ubuntu_64",
-         "disk_size": 20480,
-         "memory": 2048,
-         "cpus": 2,
-         "ssh_username": "vagrant",
-         "ssh_password": "vagrant",
-         "shutdown_command": "sudo shutdown -P now",
-         "boot_wait": "10s",
-         "boot_command": [
-           "<esc><wait><esc><wait><f6><wait><esc><wait>",
-           "<bs><bs><bs><bs><bs>",
-           "autoinstall ds=nocloud-net\\;s=http://{{.HTTPIP}}:{{.HTTPPort}}/",
-           "<enter>"
-         ],
-         "http_directory": "http",
-         "output_directory": "output-vbox"
-       }
-     ],
-     "provisioners": [
-       {
-         "type": "shell",
-         "inline": [
-           "sudo apt-get update",
-           "sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release",
-           "sudo apt-get install -y python3-pip",
-           "sudo pip3 install ansible",
-           "sudo swapoff -a",
-           "echo 'vm.swappiness=0' | sudo tee -a /etc/sysctl.conf",
-           "sudo sysctl -p",
-           "sudo systemctl disable swap.target",
-           "sudo apt-get clean",
-           "sudo apt-get autoremove -y"
-         ]
-       }
-     ],
-     "post-processors": [
-       {
-         "type": "vagrant",
-         "keep_input_artifact": false,
-         "output": "k8s-ubuntu-22.04.box"
-       }
-     ]
-   }
-   ```
-
-3. **Create cloud-init configuration (`http/user-data`):**
-   ```yaml
-   #cloud-config
-   autoinstall:
-     version: 1
-     identity:
-       hostname: k8s-base
-       username: vagrant
-       password: '$6$rounds=4096$salt$password_hash'
-     ssh:
-       install-server: true
-       authorized-keys:
-         - ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA6NF8iallvQVp22WDkTkyrtvp9eWW6A8YVr+kz4TjGYe7gHzIw+niNltGEFHzD8+v1I2YJ6oXevct1YeS0o9HZyN1Q9qgCgzUFtdOKLv6IedplqoPkcmF0aYet2PkEDo3MlTBckFXPITAMzF8dJSIFo9D8HfdOV0IAdx4O7PtixWKn5y2hMNG0zQPyUecp4pzC6kivAIhyfHilFR61RGL+GPXQ2MWZWFYbAGjyiYJnAmCP3NOTd0jMZEnDkbUvxhMmBYSdETk1rRgm+R4LOzFUGaHqHDLKLX+FIPKcF96hrucXzcWyLbIbEgE98OHlnVYCzRdK8jlqm8tehUc9c9WhQ== vagrant insecure public key
-       allow-pw: true
-     storage:
-       layout:
-         name: direct
-     network:
-       network:
-         version: 2
-         ethernets:
-           eth0:
-             dhcp4: true
-   ```
-
-4. **Build the box:**
-   ```bash
-   packer build packer.json
-   ```
-
-5. **Add the custom box to Vagrant:**
-   ```bash
-   vagrant box add k8s-ubuntu-22.04 k8s-ubuntu-22.04.box
-   ```
-
-6. **Update Vagrantfile to use custom box:**
-   ```ruby
-   config.vm.box = "k8s-ubuntu-22.04"
-   ```
-
-### Method 2: Manual Box Creation
+### Manual Box Creation
 
 1. **Create a base VM:**
    ```bash
@@ -296,9 +193,9 @@ For advanced users who want to create their own optimized Vagrant box, here's ho
 
 ### VM Configuration (Vagrantfile)
 - **Memory**: 2GB per node
-- **CPUs**: 1 per node
+- **CPUs**: 2 per node
 - **Network**: Private network (192.168.56.0/24)
-- **Box**: ubuntu/jammy64
+- **Box**: custom box
 
 ### Ansible Configuration
 
@@ -380,7 +277,7 @@ vagrant up --debug
 journalctl -u kubelet -f
 
 # Container runtime logs
-sudo journalctl -u containerd -f
+sudo journalctl -u crio -f
 ```
 
 ## 📸 Screenshots
@@ -397,13 +294,6 @@ sudo journalctl -u containerd -f
 ![Pod Distribution](docs/screenshots/pod-distribution.png)
 *Pods running across different nodes in the cluster*
 
-### Network Configuration
-![Network Config](docs/screenshots/network-config.png)
-*Flannel CNI pods providing network connectivity*
-
-### Sample Application
-![Sample App](docs/screenshots/sample-app.png)
-*Nginx deployment running on the cluster*
 
 ## 🤝 Contributing
 
