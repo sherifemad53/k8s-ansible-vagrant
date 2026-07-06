@@ -18,6 +18,26 @@ The cluster consists of:
 - **CNI**: Flannel for pod networking
 - **OS**: custom box based on ubuntu 22.04 server
 
+```mermaid
+flowchart TB
+    subgraph Host["Host Machine"]
+        Vagrant["Vagrantfile"]
+    end
+
+    subgraph Cluster["Kubernetes Cluster (192.168.56.0/24)"]
+        Master["k8s-node1 (Master)\n192.168.56.11\nkube-apiserver, etcd,\nscheduler, controller-manager"]
+        Worker1["k8s-node2 (Worker)\n192.168.56.12\nkubelet, kube-proxy, CRI-O"]
+        Worker2["k8s-node3 (Worker)\n192.168.56.13\nkubelet, kube-proxy, CRI-O"]
+    end
+
+    Vagrant -->|provisions| Master
+    Vagrant -->|provisions| Worker1
+    Vagrant -->|provisions| Worker2
+
+    Master <-->|Flannel overlay network\n10.244.0.0/16| Worker1
+    Master <-->|Flannel overlay network\n10.244.0.0/16| Worker2
+```
+
 ## 📋 Prerequisites
 
 Before running this project, ensure you have the following installed:
@@ -88,6 +108,43 @@ The `vagrant up` command will:
 3. Set up the Kubernetes master node
 4. Join worker nodes to the cluster
 5. Install Flannel CNI for networking
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant V as Vagrant
+    participant N1 as k8s-node1 (Master)
+    participant N2 as k8s-node2 (Worker)
+    participant N3 as k8s-node3 (Worker)
+    participant A as Ansible
+
+    U->>V: vagrant up
+    V->>N1: create VM
+    V->>N2: create VM
+    V->>N3: create VM
+    Note over V,N3: Ansible provisioner runs once,\nafter the last VM (k8s-node3) is up
+
+    V->>A: run playbook.yml (limit: all)
+
+    par Common role (all nodes)
+        A->>N1: install CRI-O, kubelet, kubeadm, kubectl
+        A->>N2: install CRI-O, kubelet, kubeadm, kubectl
+        A->>N3: install CRI-O, kubelet, kubeadm, kubectl
+    end
+
+    A->>N1: kubeadm init --pod-network-cidr=10.244.0.0/16
+    N1-->>A: admin.conf generated
+    A->>N1: kubectl apply -f kube-flannel.yml
+    A->>N1: kubeadm token create --print-join-command
+    N1-->>A: join_cmd
+
+    A->>N2: run join_cmd (kubeadm join)
+    N2-->>N1: node registers
+    A->>N3: run join_cmd (kubeadm join)
+    N3-->>N1: node registers
+
+    A-->>U: cluster ready (kubectl get nodes)
+```
 
 ### Accessing the Cluster
 
@@ -214,6 +271,34 @@ The project uses a role-based structure:
 
 #### Worker Role (`ansible/roles/worker/`)
 - Joins worker nodes to the cluster using the join command
+
+```mermaid
+flowchart LR
+    subgraph Common["common role (hosts: all)"]
+        C1["Install deps\n(curl, gnupg, apt-transport-https)"] --> C2["Add Kubernetes & CRI-O\nAPT repositories"]
+        C2 --> C3["Install CRI-O, kubelet,\nkubeadm, kubectl"]
+        C3 --> C4["Enable CRI-O service"]
+        C4 --> C5["Hold package versions"]
+        C5 --> C6["Enable IP forwarding\n& br_netfilter"]
+        C6 --> C7["Disable swap"]
+    end
+
+    subgraph MasterRole["master role (hosts: master)"]
+        M1["kubeadm init"] --> M2["Configure kubeconfig\nfor vagrant user"]
+        M2 --> M3["Wait for API server ready"]
+        M3 --> M4["Apply Flannel CNI"]
+        M4 --> M5["Generate join command"]
+        M5 --> M6["Share join command\nvia add_host"]
+    end
+
+    subgraph WorkerRole["worker role (hosts: workers)"]
+        W1["Run kubeadm join\nusing shared join command"]
+    end
+
+    Common --> MasterRole
+    Common --> WorkerRole
+    MasterRole -. "join_cmd (hostvars)" .-> WorkerRole
+```
 
 ### Network Configuration
 
